@@ -738,11 +738,12 @@ textarea:focus {
 }
 
 .record-body {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .record-page {
-  min-height: 100vh;
+  height: 100vh;
   padding: 24px;
   background: var(--bg);
 }
@@ -757,8 +758,12 @@ textarea:focus {
 }
 
 .record-shell {
-  width: min(980px, 100%);
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  height: calc(100vh - 48px);
   margin: 0 auto;
+  overflow: hidden;
   border: 1px solid var(--line);
   background: var(--panel);
   box-shadow: var(--shadow);
@@ -767,10 +772,25 @@ textarea:focus {
 }
 
 .detail-topbar {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 24px;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.detail-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .detail-header {
@@ -807,6 +827,25 @@ textarea:focus {
   padding: 5px 9px;
   font-size: 12px;
   font-weight: 800;
+}
+
+.record-edit-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  gap: 16px;
+}
+
+.record-markdown-editor {
+  min-height: 420px;
+}
+
+.record-markdown-workspace {
+  min-height: 0;
+}
+
+.record-form-actions {
+  margin-top: auto;
 }
 
 .spark {
@@ -905,12 +944,21 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .record-body {
+    height: auto;
+    overflow: auto;
+  }
+
   .record-page {
+    height: auto;
+    min-height: 100vh;
     padding: 12px;
   }
 
   .detail-shell,
   .record-shell {
+    height: auto;
+    min-height: calc(100vh - 24px);
     padding: 16px;
   }
 

@@ -1,6 +1,9 @@
+import { escapeHtml, plainTextFromMarkdown, renderMarkdown } from './lib/markdown.js';
+
 const recordContent = document.querySelector('#recordContent');
 const backToMain = document.querySelector('#backToMain');
-const celebrateButton = document.querySelector('#celebrateButton');
+const copyButton = document.querySelector('#copyButton');
+const editButton = document.querySelector('#editRecordButton');
 
 const typeNames = {
   coding: '刷题',
@@ -10,150 +13,30 @@ const typeNames = {
   other: '其他'
 };
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
+const markdownActions = {
+  bold: { before: '**', after: '**', placeholder: '加粗文字' },
+  italic: { before: '*', after: '*', placeholder: '斜体文字' },
+  heading: { before: '## ', after: '', placeholder: '小标题', block: true },
+  list: { before: '- ', after: '', placeholder: '列表项', block: true },
+  quote: { before: '> ', after: '', placeholder: '引用内容', block: true },
+  code: { before: '```js\n', after: '\n```', placeholder: 'console.log("hello");', block: true },
+  link: { before: '[', after: '](https://example.com)', placeholder: '链接文字' }
+};
 
-function renderInlineMarkdown(value) {
-  let html = escapeHtml(value);
-  html = html.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  return html;
-}
-
-function renderMarkdown(markdown) {
-  const source = String(markdown || '').replace(/\r\n/g, '\n').trim();
-  if (!source) return '';
-
-  const lines = source.split('\n');
-  const html = [];
-  let inCode = false;
-  let codeLines = [];
-  let paragraph = [];
-  let list = [];
-  let quote = [];
-
-  function flushParagraph() {
-    if (!paragraph.length) return;
-    html.push(`<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`);
-    paragraph = [];
-  }
-
-  function flushList() {
-    if (!list.length) return;
-    html.push(`<ul>${list.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</ul>`);
-    list = [];
-  }
-
-  function flushQuote() {
-    if (!quote.length) return;
-    html.push(`<blockquote>${quote.map((item) => `<p>${renderInlineMarkdown(item)}</p>`).join('')}</blockquote>`);
-    quote = [];
-  }
-
-  function flushBlocks() {
-    flushParagraph();
-    flushList();
-    flushQuote();
-  }
-
-  function isTableSeparator(line) {
-    return /^\s*\|?(\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
-  }
-
-  function parseTableRow(line) {
-    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
-  }
-
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (line.startsWith('```')) {
-      if (inCode) {
-        html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
-        codeLines = [];
-        inCode = false;
-      } else {
-        flushBlocks();
-        inCode = true;
-      }
-      continue;
-    }
-
-    if (inCode) {
-      codeLines.push(line);
-      continue;
-    }
-
-    if (!line.trim()) {
-      flushBlocks();
-      continue;
-    }
-
-    if (line.includes('|') && lines[lineIndex + 1] && isTableSeparator(lines[lineIndex + 1])) {
-      flushBlocks();
-      const headers = parseTableRow(line);
-      const rows = [];
-      lineIndex += 2;
-      while (lineIndex < lines.length && lines[lineIndex].includes('|') && lines[lineIndex].trim()) {
-        rows.push(parseTableRow(lines[lineIndex]));
-        lineIndex += 1;
-      }
-      lineIndex -= 1;
-      html.push(`
-        <table>
-          <thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join('')}</tr></thead>
-          <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table>
-      `);
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      flushBlocks();
-      html.push(`<h${heading[1].length}>${renderInlineMarkdown(heading[2])}</h${heading[1].length}>`);
-      continue;
-    }
-
-    const listItem = line.match(/^\s*[-*]\s+(.+)$/);
-    if (listItem) {
-      flushParagraph();
-      flushQuote();
-      list.push(listItem[1]);
-      continue;
-    }
-
-    const quoteItem = line.match(/^>\s?(.+)$/);
-    if (quoteItem) {
-      flushParagraph();
-      flushList();
-      quote.push(quoteItem[1]);
-      continue;
-    }
-
-    flushList();
-    flushQuote();
-    paragraph.push(line.trim());
-  }
-
-  if (inCode) html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
-  flushBlocks();
-  return html.join('');
-}
+let currentEntry = null;
+let mode = 'view';
 
 function formatDateTime(value) {
   return new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(new Date(value));
+}
+
+function toDateTimeLocal(date = new Date()) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 16);
 }
 
 function metricText(metrics = {}) {
@@ -164,12 +47,50 @@ function metricText(metrics = {}) {
   return result;
 }
 
+function parseTagInput(value) {
+  const seen = new Set();
+  return String(value || '')
+    .split(',')
+    .map((tag) => tag.trim().replace(/^#/, ''))
+    .filter(Boolean)
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function readMetrics(form) {
+  const metrics = {};
+  const problemCount = form.querySelector('#recordProblemCount').value;
+  const workoutMinutes = form.querySelector('#recordWorkoutMinutes').value;
+  const bodyWeight = form.querySelector('#recordBodyWeight').value;
+  if (problemCount) metrics.problemCount = Number(problemCount);
+  if (workoutMinutes) metrics.workoutMinutes = Number(workoutMinutes);
+  if (bodyWeight) metrics.bodyWeight = Number(bodyWeight);
+  return metrics;
+}
+
+async function errorMessage(response, fallback) {
+  try {
+    const data = await response.json();
+    return data.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function copyTextForEntry(entry) {
+  return plainTextFromMarkdown(entry.content);
+}
+
 function firework(x, y) {
   const colors = ['#2f6f68', '#b75d69', '#aa7c2c', '#f3d27a', '#7da6a1'];
   for (let i = 0; i < 24; i += 1) {
     const particle = document.createElement('span');
     const angle = (Math.PI * 2 * i) / 24;
-    const distance = 48 + Math.random() * 54;
+    const distance = 46 + Math.random() * 58;
     particle.className = 'spark';
     particle.style.left = `${x}px`;
     particle.style.top = `${y}px`;
@@ -181,16 +102,24 @@ function firework(x, y) {
   }
 }
 
-function renderRecord(entry) {
+function renderImageGrid(entry) {
+  return (entry.images || [])
+    .map((image) => `<img src="${image.url}" alt="${escapeHtml(image.originalName || entry.title)}" loading="lazy" />`)
+    .join('');
+}
+
+function renderView(entry) {
+  mode = 'view';
+  editButton.textContent = '编辑记录';
+  copyButton.disabled = false;
+
   const metrics = metricText(entry.metrics)
     .map((item) => `<span>${escapeHtml(item)}</span>`)
     .join('');
   const tags = (entry.tags || [])
     .map((tag) => `<span class="tag-chip">#${escapeHtml(tag.name)}</span>`)
     .join('');
-  const images = (entry.images || [])
-    .map((image) => `<img src="${image.url}" alt="${escapeHtml(image.originalName || entry.title)}" loading="lazy" />`)
-    .join('');
+  const images = renderImageGrid(entry);
 
   document.title = `${entry.title} - Quick Record`;
   recordContent.innerHTML = `
@@ -204,6 +133,144 @@ function renderRecord(entry) {
     <div class="detail-body markdown-body">${renderMarkdown(entry.content) || '<p>无正文</p>'}</div>
     ${images ? `<div class="image-grid detail-images">${images}</div>` : ''}
   `;
+}
+
+function updateEditPreview(form) {
+  const content = form.querySelector('#recordContentInput').value;
+  const preview = form.querySelector('#recordMarkdownPreview');
+  const rendered = renderMarkdown(content);
+  preview.innerHTML = rendered || '开始输入后会在这里预览';
+  preview.classList.toggle('empty-preview', !rendered);
+}
+
+function insertMarkdown(form, actionName) {
+  const textarea = form.querySelector('#recordContentInput');
+  const action = markdownActions[actionName];
+  if (!action) return;
+
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = textarea.value.slice(start, end) || action.placeholder;
+  const prefix = action.block && start > 0 && textarea.value[start - 1] !== '\n' ? '\n' : '';
+  const nextValue = `${prefix}${action.before}${selected}${action.after}`;
+
+  textarea.setRangeText(nextValue, start, end, 'select');
+  const selectStart = start + prefix.length + action.before.length;
+  textarea.selectionStart = selectStart;
+  textarea.selectionEnd = selectStart + selected.length;
+  textarea.focus();
+  updateEditPreview(form);
+}
+
+function renderEdit(entry) {
+  mode = 'edit';
+  editButton.textContent = '取消编辑';
+  copyButton.disabled = true;
+
+  recordContent.innerHTML = `
+    <form id="recordEditForm" class="record-edit-form">
+      <div class="title-grid">
+        <label>
+          <span>标题</span>
+          <input id="recordTitle" type="text" value="${escapeHtml(entry.title)}" required />
+        </label>
+      </div>
+      <div class="form-grid meta-grid">
+        <label>
+          <span>时间</span>
+          <input id="recordOccurredAt" type="datetime-local" value="${toDateTimeLocal(new Date(entry.occurredAt))}" required />
+        </label>
+        <label>
+          <span>类型</span>
+          <select id="recordActivityType" required>
+            ${Object.entries(typeNames)
+              .map(([value, label]) => `<option value="${value}" ${entry.activityType === value ? 'selected' : ''}>${label}</option>`)
+              .join('')}
+          </select>
+        </label>
+        <label>
+          <span>标签</span>
+          <input id="recordTagsInput" type="text" value="${escapeHtml((entry.tags || []).map((tag) => tag.name).join(', '))}" />
+        </label>
+      </div>
+      <section class="markdown-editor record-markdown-editor">
+        <div class="editor-toolbar">
+          <span>Markdown</span>
+          <div class="toolbar-actions">
+            <button type="button" data-md="bold" title="加粗">B</button>
+            <button type="button" data-md="italic" title="斜体">I</button>
+            <button type="button" data-md="heading" title="二级标题">H2</button>
+            <button type="button" data-md="list" title="列表">•</button>
+            <button type="button" data-md="quote" title="引用">”</button>
+            <button type="button" data-md="code" title="代码块">&lt;/&gt;</button>
+            <button type="button" data-md="link" title="链接">Link</button>
+          </div>
+        </div>
+        <div class="markdown-workspace record-markdown-workspace">
+          <label class="editor-field">
+            <span>正文</span>
+            <textarea id="recordContentInput">${escapeHtml(entry.content || '')}</textarea>
+          </label>
+          <section class="preview-panel">
+            <div class="preview-title">预览</div>
+            <div id="recordMarkdownPreview" class="markdown-body"></div>
+          </section>
+        </div>
+      </section>
+      <div class="metrics-grid">
+        <label>
+          <span>题目数</span>
+          <input id="recordProblemCount" type="number" min="0" value="${entry.metrics?.problemCount ?? ''}" />
+        </label>
+        <label>
+          <span>训练分钟</span>
+          <input id="recordWorkoutMinutes" type="number" min="0" value="${entry.metrics?.workoutMinutes ?? ''}" />
+        </label>
+        <label>
+          <span>体重 kg</span>
+          <input id="recordBodyWeight" type="number" min="0" step="0.1" value="${entry.metrics?.bodyWeight ?? ''}" />
+        </label>
+      </div>
+      <div class="form-actions record-form-actions">
+        <button class="secondary-button" id="cancelRecordEdit" type="button">取消</button>
+        <button class="primary-button" type="submit">保存修改</button>
+      </div>
+    </form>
+  `;
+
+  const form = recordContent.querySelector('#recordEditForm');
+  updateEditPreview(form);
+  form.querySelector('#recordContentInput').addEventListener('input', () => updateEditPreview(form));
+  form.querySelector('.editor-toolbar').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-md]');
+    if (!button) return;
+    insertMarkdown(form, button.dataset.md);
+  });
+  form.querySelector('#cancelRecordEdit').addEventListener('click', () => renderView(currentEntry));
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      const response = await fetch(`/api/entries/${currentEntry.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          occurredAt: new Date(form.querySelector('#recordOccurredAt').value).toISOString(),
+          activityType: form.querySelector('#recordActivityType').value,
+          title: form.querySelector('#recordTitle').value.trim(),
+          content: form.querySelector('#recordContentInput').value.trim(),
+          metrics: readMetrics(form),
+          tags: parseTagInput(form.querySelector('#recordTagsInput').value)
+        })
+      });
+
+      if (!response.ok) throw new Error(await errorMessage(response, '更新失败'));
+      const data = await response.json();
+      currentEntry = data.entry;
+      renderView(currentEntry);
+    } catch (error) {
+      window.alert(error.message);
+    }
+  });
 }
 
 async function loadRecord() {
@@ -220,22 +287,39 @@ async function loadRecord() {
   }
 
   const data = await response.json();
-  renderRecord(data.entry);
-  window.setTimeout(() => firework(window.innerWidth / 2, 120), 240);
+  currentEntry = data.entry;
+  renderView(currentEntry);
+  window.setTimeout(() => firework(window.innerWidth / 2, 120), 220);
 }
 
 backToMain.addEventListener('click', () => {
   window.location.href = '/';
 });
 
-celebrateButton.addEventListener('click', (event) => {
-  const rect = event.currentTarget.getBoundingClientRect();
-  firework(rect.left + rect.width / 2, rect.top + rect.height / 2);
+copyButton.addEventListener('click', async () => {
+  if (!currentEntry) return;
+  await navigator.clipboard.writeText(copyTextForEntry(currentEntry));
+  const original = copyButton.textContent;
+  copyButton.textContent = '已复制';
+  window.setTimeout(() => {
+    copyButton.textContent = original;
+  }, 1300);
+});
+
+editButton.addEventListener('click', () => {
+  if (!currentEntry) return;
+  if (mode === 'edit') {
+    renderView(currentEntry);
+    return;
+  }
+  renderEdit(currentEntry);
 });
 
 document.addEventListener('click', (event) => {
-  if (event.target.closest('button, a')) return;
+  if (event.target.closest('button, a, input, textarea, select')) return;
   firework(event.clientX, event.clientY);
 });
 
-loadRecord();
+loadRecord().catch((error) => {
+  recordContent.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+});

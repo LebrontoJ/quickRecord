@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "db:migrate": "node scripts/migrate.js"
+    "db:migrate": "node scripts/migrate.js",
+    "check": "node --check server.js && node --check scripts/migrate.js && node --check public/app.js && node --check public/record.js",
+    "test": "node --test"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
