@@ -5,7 +5,12 @@
 ## 功能
 
 - 新增、编辑、删除每日记录
+- 放大的 Markdown 编辑器，支持实时预览和常用格式插入
+- 右侧记录栏可折叠，写长复盘时可以留出更多空间
 - 按时间、类型、关键词回溯记录
+- 日历视图，按月查看每天记录数量并快速跳转到某一天
+- 标签系统，支持用多个标签组织刷题、健身和复盘内容
+- 统计面板，展示近 30 天记录数、活跃天、题目数和训练分钟
 - 支持刷题数量、训练分钟、体重等结构化指标
 - 支持多张图片上传，比如健身照、题解截图、训练记录截图
 - PostgreSQL schema 可直接用于本地或云端数据库
@@ -62,10 +67,15 @@ DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 
 - `entries`：记录时间、类型、标题、正文、结构化指标
 - `entry_images`：记录每条日志关联的图片地址和文件信息
+- `tags`：标签字典
+- `entry_tags`：记录和标签的多对多关联
 
 ## API
 
 - `GET /api/entries`：查询记录，支持 `activityType`、`start`、`end`、`q`
+- `GET /api/tags`：查询标签及使用次数
+- `GET /api/stats`：查询近 30 天统计面板数据
+- `GET /api/calendar`：查询某个月每天的记录聚合
 - `POST /api/entries`：创建记录，使用 `multipart/form-data` 上传图片
 - `GET /api/entries/:id`：查看单条记录
 - `PUT /api/entries/:id`：更新记录
@@ -76,6 +86,5 @@ DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 
 - 登录鉴权，多用户隔离数据
 - 图片迁移到 S3、Cloudflare R2、Supabase Storage
-- 日历视图、周/月统计图
 - 给刷题记录增加题目链接、难度、标签
 - 给健身记录增加动作组数、重量、PR 标记

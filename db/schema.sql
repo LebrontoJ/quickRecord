@@ -21,9 +21,23 @@ CREATE TABLE IF NOT EXISTS entry_images (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS tags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS entry_tags (
+  entry_id UUID NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+  tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (entry_id, tag_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_entries_occurred_at ON entries (occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_entries_activity_type ON entries (activity_type);
 CREATE INDEX IF NOT EXISTS idx_entry_images_entry_id ON entry_images (entry_id);
+CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name);
+CREATE INDEX IF NOT EXISTS idx_entry_tags_tag_id ON entry_tags (tag_id);
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$

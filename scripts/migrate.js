@@ -16,7 +16,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === 'true' || process.env.DATABASE_URL.includes('sslmode=require')
+    ? { rejectUnauthorized: false }
+    : undefined
 });
 
 try {
@@ -24,7 +27,8 @@ try {
   await pool.query(schema);
   console.log('Database schema is ready.');
 } catch (error) {
-  console.error('Migration failed:', error.message);
+  const details = error.errors?.map((item) => `${item.code || 'ERROR'} ${item.address || ''}:${item.port || ''}`).join(', ');
+  console.error('Migration failed:', error.code || error.message || details || 'Unknown database error');
   process.exitCode = 1;
 } finally {
   await pool.end();

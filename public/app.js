@@ -1,16 +1,20 @@
 const form = document.querySelector('#entryForm');
+const appShell = document.querySelector('#appShell');
 const entryId = document.querySelector('#entryId');
 const occurredAt = document.querySelector('#occurredAt');
 const activityType = document.querySelector('#activityType');
 const title = document.querySelector('#title');
 const content = document.querySelector('#content');
+const markdownPreview = document.querySelector('#markdownPreview');
 const images = document.querySelector('#images');
+const tagsInput = document.querySelector('#tagsInput');
 const problemCount = document.querySelector('#problemCount');
 const workoutMinutes = document.querySelector('#workoutMinutes');
 const bodyWeight = document.querySelector('#bodyWeight');
 const timeline = document.querySelector('#timeline');
 const template = document.querySelector('#entryTemplate');
 const filterType = document.querySelector('#filterType');
+const tagFilter = document.querySelector('#tagFilter');
 const searchInput = document.querySelector('#searchInput');
 const startDate = document.querySelector('#startDate');
 const endDate = document.querySelector('#endDate');
@@ -19,6 +23,17 @@ const refreshButton = document.querySelector('#refreshButton');
 const totalCount = document.querySelector('#totalCount');
 const codingCount = document.querySelector('#codingCount');
 const fitnessCount = document.querySelector('#fitnessCount');
+const statEntries = document.querySelector('#statEntries');
+const statActiveDays = document.querySelector('#statActiveDays');
+const statProblems = document.querySelector('#statProblems');
+const statWorkout = document.querySelector('#statWorkout');
+const typeBars = document.querySelector('#typeBars');
+const topTags = document.querySelector('#topTags');
+const calendarTitle = document.querySelector('#calendarTitle');
+const calendarGrid = document.querySelector('#calendarGrid');
+const prevMonth = document.querySelector('#prevMonth');
+const nextMonth = document.querySelector('#nextMonth');
+const sidebarToggle = document.querySelector('#sidebarToggle');
 
 const typeNames = {
   coding: '刷题',
@@ -29,6 +44,18 @@ const typeNames = {
 };
 
 let entries = [];
+let tags = [];
+let calendarMonth = new Date();
+
+const markdownActions = {
+  bold: { before: '**', after: '**', placeholder: '加粗文字' },
+  italic: { before: '*', after: '*', placeholder: '斜体文字' },
+  heading: { before: '## ', after: '', placeholder: '小标题', block: true },
+  list: { before: '- ', after: '', placeholder: '列表项', block: true },
+  quote: { before: '> ', after: '', placeholder: '引用内容', block: true },
+  code: { before: '```js\n', after: '\n```', placeholder: 'console.log("hello");', block: true },
+  link: { before: '[', after: '](https://example.com)', placeholder: '链接文字' }
+};
 
 function toDateTimeLocal(date = new Date()) {
   const offset = date.getTimezoneOffset();
@@ -41,6 +68,181 @@ function formatDateTime(value) {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(new Date(value));
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function renderInlineMarkdown(value) {
+  let html = escapeHtml(value);
+  html = html.replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return html;
+}
+
+function renderMarkdown(markdown) {
+  const source = String(markdown || '').replace(/\r\n/g, '\n').trim();
+  if (!source) return '';
+
+  const lines = source.split('\n');
+  const html = [];
+  let inCode = false;
+  let codeLines = [];
+  let paragraph = [];
+  let list = [];
+  let quote = [];
+
+  function flushParagraph() {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`);
+    paragraph = [];
+  }
+
+  function flushList() {
+    if (!list.length) return;
+    html.push(`<ul>${list.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</ul>`);
+    list = [];
+  }
+
+  function flushQuote() {
+    if (!quote.length) return;
+    html.push(`<blockquote>${quote.map((item) => `<p>${renderInlineMarkdown(item)}</p>`).join('')}</blockquote>`);
+    quote = [];
+  }
+
+  function flushBlocks() {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  }
+
+  function isTableSeparator(line) {
+    return /^\s*\|?(\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
+  }
+
+  function parseTableRow(line) {
+    return line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((cell) => cell.trim());
+  }
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (line.startsWith('```')) {
+      if (inCode) {
+        html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+        codeLines = [];
+        inCode = false;
+      } else {
+        flushBlocks();
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushBlocks();
+      continue;
+    }
+
+    if (line.includes('|') && lines[lineIndex + 1] && isTableSeparator(lines[lineIndex + 1])) {
+      flushBlocks();
+      const headers = parseTableRow(line);
+      const rows = [];
+      lineIndex += 2;
+
+      while (lineIndex < lines.length && lines[lineIndex].includes('|') && lines[lineIndex].trim()) {
+        rows.push(parseTableRow(lines[lineIndex]));
+        lineIndex += 1;
+      }
+
+      lineIndex -= 1;
+      html.push(`
+        <table>
+          <thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      `);
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushBlocks();
+      html.push(`<h${heading[1].length}>${renderInlineMarkdown(heading[2])}</h${heading[1].length}>`);
+      continue;
+    }
+
+    const listItem = line.match(/^\s*[-*]\s+(.+)$/);
+    if (listItem) {
+      flushParagraph();
+      flushQuote();
+      list.push(listItem[1]);
+      continue;
+    }
+
+    const quoteItem = line.match(/^>\s?(.+)$/);
+    if (quoteItem) {
+      flushParagraph();
+      flushList();
+      quote.push(quoteItem[1]);
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(line.trim());
+  }
+
+  if (inCode) {
+    html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+  }
+
+  flushBlocks();
+  return html.join('');
+}
+
+function updateMarkdownPreview() {
+  const rendered = renderMarkdown(content.value);
+  markdownPreview.innerHTML = rendered || '开始输入后会在这里预览';
+  markdownPreview.classList.toggle('empty-preview', !rendered);
+}
+
+function insertMarkdown(actionName) {
+  const action = markdownActions[actionName];
+  if (!action) return;
+
+  const start = content.selectionStart;
+  const end = content.selectionEnd;
+  const selected = content.value.slice(start, end) || action.placeholder;
+  const prefix = action.block && start > 0 && content.value[start - 1] !== '\n' ? '\n' : '';
+  const nextValue = `${prefix}${action.before}${selected}${action.after}`;
+
+  content.setRangeText(nextValue, start, end, 'select');
+  const selectStart = start + prefix.length + action.before.length;
+  content.selectionStart = selectStart;
+  content.selectionEnd = selectStart + selected.length;
+  content.focus();
+  updateMarkdownPreview();
 }
 
 function readMetrics() {
@@ -57,12 +259,28 @@ function setMetrics(metrics = {}) {
   bodyWeight.value = metrics.bodyWeight ?? '';
 }
 
+function parseTagInput(value) {
+  const seen = new Set();
+  return String(value || '')
+    .split(',')
+    .map((tag) => tag.trim().replace(/^#/, ''))
+    .filter(Boolean)
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function resetForm() {
   entryId.value = '';
   form.reset();
   occurredAt.value = toDateTimeLocal();
   setMetrics();
+  tagsInput.value = '';
   form.querySelector('.primary-button').textContent = '保存记录';
+  updateMarkdownPreview();
 }
 
 function metricText(metrics = {}) {
@@ -71,6 +289,27 @@ function metricText(metrics = {}) {
   if (metrics.workoutMinutes) result.push(`训练 ${metrics.workoutMinutes} 分钟`);
   if (metrics.bodyWeight) result.push(`体重 ${metrics.bodyWeight} kg`);
   return result;
+}
+
+function plainSummary(markdown, length = 130) {
+  const text = String(markdown || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/[#>*_`|~-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text.length > length ? `${text.slice(0, length)}...` : text;
+}
+
+function renderImageGrid(container, entry) {
+  for (const image of entry.images || []) {
+    const img = document.createElement('img');
+    img.src = image.url;
+    img.alt = image.originalName || entry.title;
+    container.append(img);
+  }
 }
 
 function render(entriesToRender) {
@@ -92,12 +331,13 @@ function render(entriesToRender) {
     const article = node.querySelector('.entry-card');
     const pill = node.querySelector('.type-pill');
     const metricRow = node.querySelector('.metric-row');
+    const tagRow = node.querySelector('.tag-row');
     const imageGrid = node.querySelector('.image-grid');
 
     article.dataset.id = entry.id;
     node.querySelector('time').textContent = formatDateTime(entry.occurredAt);
     node.querySelector('h2').textContent = entry.title;
-    node.querySelector('.entry-content').textContent = entry.content || '无正文';
+    node.querySelector('.entry-content').textContent = plainSummary(entry.content) || '无正文';
     pill.textContent = typeNames[entry.activityType] || entry.activityType;
     pill.classList.add(entry.activityType);
 
@@ -109,21 +349,36 @@ function render(entriesToRender) {
 
     if (!metricRow.children.length) metricRow.remove();
 
-    for (const image of entry.images || []) {
-      const img = document.createElement('img');
-      img.src = image.url;
-      img.alt = image.originalName || entry.title;
-      imageGrid.append(img);
+    for (const tag of entry.tags || []) {
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.textContent = `#${tag.name}`;
+      badge.dataset.tag = tag.name;
+      tagRow.append(badge);
     }
+
+    if (!tagRow.children.length) tagRow.remove();
+
+    renderImageGrid(imageGrid, entry);
 
     if (!imageGrid.children.length) imageGrid.remove();
     timeline.append(node);
   }
 }
 
+function renderTagFilter() {
+  const current = tagFilter.value;
+  tagFilter.replaceChildren(new Option('全部标签', 'all'));
+  for (const tag of tags) {
+    tagFilter.append(new Option(`${tag.name} (${tag.count})`, tag.name));
+  }
+  tagFilter.value = [...tagFilter.options].some((option) => option.value === current) ? current : 'all';
+}
+
 async function loadEntries() {
   const params = new URLSearchParams();
   if (filterType.value !== 'all') params.set('activityType', filterType.value);
+  if (tagFilter.value !== 'all') params.set('tag', tagFilter.value);
   if (searchInput.value.trim()) params.set('q', searchInput.value.trim());
   if (startDate.value) params.set('start', `${startDate.value}T00:00:00`);
   if (endDate.value) params.set('end', `${endDate.value}T23:59:59`);
@@ -133,6 +388,115 @@ async function loadEntries() {
   const data = await response.json();
   entries = data.entries;
   render(entries);
+}
+
+async function loadTags() {
+  const response = await fetch('/api/tags');
+  if (!response.ok) throw new Error('标签加载失败');
+  const data = await response.json();
+  tags = data.tags;
+  renderTagFilter();
+}
+
+function renderStats(data) {
+  const overview = data.overview || {};
+  statEntries.textContent = overview.total_entries ?? 0;
+  statActiveDays.textContent = overview.active_days ?? 0;
+  statProblems.textContent = overview.total_problems ?? 0;
+  statWorkout.textContent = overview.total_workout_minutes ?? 0;
+
+  typeBars.replaceChildren();
+  const maxCount = Math.max(...(data.byType || []).map((item) => item.count), 1);
+  for (const item of data.byType || []) {
+    const row = document.createElement('div');
+    row.className = 'type-bar';
+    row.innerHTML = `
+      <span>${typeNames[item.activity_type] || item.activity_type}</span>
+      <div><i style="width: ${(item.count / maxCount) * 100}%"></i></div>
+      <b>${item.count}</b>
+    `;
+    typeBars.append(row);
+  }
+
+  topTags.replaceChildren();
+  for (const tag of data.topTags || []) {
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.textContent = `#${tag.name} ${tag.count}`;
+    badge.dataset.tag = tag.name;
+    topTags.append(badge);
+  }
+}
+
+async function loadStats() {
+  const response = await fetch('/api/stats');
+  if (!response.ok) throw new Error('统计加载失败');
+  renderStats(await response.json());
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function renderCalendar(month, days) {
+  const dayMap = new Map(days.map((day) => [day.day.slice(0, 10), day]));
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstDay = new Date(year, monthIndex, 1);
+  const totalDays = new Date(year, monthIndex + 1, 0).getDate();
+  const leading = (firstDay.getDay() + 6) % 7;
+
+  calendarTitle.textContent = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long'
+  }).format(month);
+  calendarGrid.replaceChildren();
+
+  for (let i = 0; i < leading; i += 1) {
+    const empty = document.createElement('span');
+    empty.className = 'calendar-day empty';
+    calendarGrid.append(empty);
+  }
+
+  for (let day = 1; day <= totalDays; day += 1) {
+    const date = new Date(year, monthIndex, day);
+    const key = localDateKey(date);
+    const data = dayMap.get(key);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'calendar-day';
+    button.dataset.date = key;
+    if (data) button.classList.add('has-entry');
+    button.innerHTML = `
+      <span>${day}</span>
+      <small>${data ? data.entry_count : ''}</small>
+    `;
+    calendarGrid.append(button);
+  }
+}
+
+async function loadCalendar() {
+  const response = await fetch(`/api/calendar?month=${monthKey(calendarMonth)}`);
+  if (!response.ok) throw new Error('日历加载失败');
+  const data = await response.json();
+  renderCalendar(calendarMonth, data.days);
+}
+
+async function refreshDashboard() {
+  await Promise.all([loadTags(), loadStats(), loadCalendar()]);
+}
+
+async function errorMessage(response, fallback) {
+  try {
+    const data = await response.json();
+    return data.error || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 async function saveEntry(event) {
@@ -147,10 +511,11 @@ async function saveEntry(event) {
         activityType: activityType.value,
         title: title.value.trim(),
         content: content.value.trim(),
-        metrics: readMetrics()
+        metrics: readMetrics(),
+        tags: parseTagInput(tagsInput.value)
       })
     });
-    if (!response.ok) throw new Error('更新失败');
+    if (!response.ok) throw new Error(await errorMessage(response, '更新失败'));
   } else {
     const data = new FormData();
     data.set('occurredAt', new Date(occurredAt.value).toISOString());
@@ -158,17 +523,18 @@ async function saveEntry(event) {
     data.set('title', title.value.trim());
     data.set('content', content.value.trim());
     data.set('metrics', JSON.stringify(readMetrics()));
+    data.set('tags', JSON.stringify(parseTagInput(tagsInput.value)));
     for (const file of images.files) data.append('images', file);
 
     const response = await fetch('/api/entries', {
       method: 'POST',
       body: data
     });
-    if (!response.ok) throw new Error('保存失败');
+    if (!response.ok) throw new Error(await errorMessage(response, '保存失败'));
   }
 
   resetForm();
-  await loadEntries();
+  await Promise.all([loadEntries(), refreshDashboard()]);
 }
 
 function editEntry(id) {
@@ -180,8 +546,10 @@ function editEntry(id) {
   title.value = entry.title;
   content.value = entry.content;
   setMetrics(entry.metrics);
+  tagsInput.value = (entry.tags || []).map((tag) => tag.name).join(', ');
   images.value = '';
   form.querySelector('.primary-button').textContent = '更新记录';
+  updateMarkdownPreview();
   document.querySelector('.editor-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -190,7 +558,7 @@ async function deleteEntry(id) {
   if (!confirmed) return;
   const response = await fetch(`/api/entries/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('删除失败');
-  await loadEntries();
+  await Promise.all([loadEntries(), refreshDashboard()]);
 }
 
 function debounce(callback, delay = 250) {
@@ -211,21 +579,59 @@ timeline.addEventListener('click', (event) => {
   const button = event.target.closest('button');
   const article = event.target.closest('.entry-card');
   if (!button || !article) return;
+  if (button.dataset.action === 'view') window.location.href = `/record.html?id=${encodeURIComponent(article.dataset.id)}`;
   if (button.dataset.action === 'edit') editEntry(article.dataset.id);
   if (button.dataset.action === 'delete') {
     deleteEntry(article.dataset.id).catch((error) => window.alert(error.message));
   }
+  if (button.dataset.tag) {
+    tagFilter.value = button.dataset.tag;
+    loadEntries().catch((error) => window.alert(error.message));
+  }
 });
 
 const debouncedLoad = debounce(() => loadEntries().catch((error) => window.alert(error.message)));
-for (const control of [filterType, startDate, endDate]) {
+for (const control of [filterType, tagFilter, startDate, endDate]) {
   control.addEventListener('change', debouncedLoad);
 }
 searchInput.addEventListener('input', debouncedLoad);
 resetButton.addEventListener('click', resetForm);
-refreshButton.addEventListener('click', () => loadEntries().catch((error) => window.alert(error.message)));
+refreshButton.addEventListener('click', () => Promise.all([loadEntries(), refreshDashboard()]).catch((error) => window.alert(error.message)));
+content.addEventListener('input', updateMarkdownPreview);
+document.querySelector('.editor-toolbar').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-md]');
+  if (!button) return;
+  insertMarkdown(button.dataset.md);
+});
+sidebarToggle.addEventListener('click', () => {
+  const collapsed = appShell.classList.toggle('sidebar-collapsed');
+  sidebarToggle.textContent = collapsed ? '›' : '‹';
+  sidebarToggle.title = collapsed ? '展开记录栏' : '折叠记录栏';
+});
+prevMonth.addEventListener('click', () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  loadCalendar().catch((error) => window.alert(error.message));
+});
+nextMonth.addEventListener('click', () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  loadCalendar().catch((error) => window.alert(error.message));
+});
+calendarGrid.addEventListener('click', (event) => {
+  const button = event.target.closest('.calendar-day');
+  if (!button?.dataset.date) return;
+  startDate.value = button.dataset.date;
+  endDate.value = button.dataset.date;
+  loadEntries().catch((error) => window.alert(error.message));
+});
+topTags.addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button?.dataset.tag) return;
+  tagFilter.value = button.dataset.tag;
+  loadEntries().catch((error) => window.alert(error.message));
+});
 
 resetForm();
-loadEntries().catch((error) => {
+updateMarkdownPreview();
+Promise.all([loadEntries(), refreshDashboard()]).catch((error) => {
   timeline.textContent = error.message;
 });

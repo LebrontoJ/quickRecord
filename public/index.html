@@ -7,25 +7,144 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
+    <main class="app-shell" id="appShell">
+      <section class="timeline-panel" aria-label="时间线">
+        <div class="sidebar-top">
+          <button class="icon-button" id="sidebarToggle" type="button" title="折叠记录栏">‹</button>
+          <div>
+            <p class="eyebrow">Records</p>
+            <h2>记录回看</h2>
+          </div>
+          <button class="icon-button" id="refreshButton" type="button" title="刷新记录">↻</button>
+        </div>
+
+        <div class="sidebar-content" id="sidebarContent">
+          <div class="insights-grid">
+            <section class="stats-panel" aria-label="统计面板">
+              <div class="section-title-row">
+                <div>
+                  <p class="eyebrow">Stats</p>
+                  <h2>近 30 天</h2>
+                </div>
+              </div>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <span id="statEntries">0</span>
+                  <small>记录</small>
+                </div>
+                <div class="stat-card">
+                  <span id="statActiveDays">0</span>
+                  <small>活跃天</small>
+                </div>
+                <div class="stat-card">
+                  <span id="statProblems">0</span>
+                  <small>题目</small>
+                </div>
+                <div class="stat-card">
+                  <span id="statWorkout">0</span>
+                  <small>训练分钟</small>
+                </div>
+              </div>
+              <div id="typeBars" class="type-bars"></div>
+              <div id="topTags" class="top-tags"></div>
+            </section>
+
+            <section class="calendar-panel" aria-label="日历视图">
+              <div class="section-title-row">
+                <button class="icon-button compact" id="prevMonth" type="button" title="上个月">‹</button>
+                <div>
+                  <p class="eyebrow">Calendar</p>
+                  <h2 id="calendarTitle">本月</h2>
+                </div>
+                <button class="icon-button compact" id="nextMonth" type="button" title="下个月">›</button>
+              </div>
+              <div class="calendar-weekdays">
+                <span>一</span>
+                <span>二</span>
+                <span>三</span>
+                <span>四</span>
+                <span>五</span>
+                <span>六</span>
+                <span>日</span>
+              </div>
+              <div id="calendarGrid" class="calendar-grid"></div>
+            </section>
+          </div>
+
+          <div class="filters">
+            <label>
+              <span>搜索</span>
+              <input id="searchInput" type="search" placeholder="标题或正文" />
+            </label>
+            <label>
+              <span>筛选</span>
+              <select id="filterType">
+                <option value="all">全部类型</option>
+                <option value="coding">刷题心得</option>
+                <option value="fitness">健身记录</option>
+                <option value="reading">阅读学习</option>
+                <option value="life">生活</option>
+                <option value="other">其他</option>
+              </select>
+            </label>
+            <label>
+              <span>标签</span>
+              <select id="tagFilter">
+                <option value="all">全部标签</option>
+              </select>
+            </label>
+            <label>
+              <span>开始</span>
+              <input id="startDate" type="date" />
+            </label>
+            <label>
+              <span>结束</span>
+              <input id="endDate" type="date" />
+            </label>
+          </div>
+
+          <div class="summary-strip">
+            <div>
+              <span id="totalCount">0</span>
+              <small>条记录</small>
+            </div>
+            <div>
+              <span id="codingCount">0</span>
+              <small>刷题</small>
+            </div>
+            <div>
+              <span id="fitnessCount">0</span>
+              <small>健身</small>
+            </div>
+          </div>
+
+          <div id="timeline" class="timeline"></div>
+        </div>
+      </section>
+
       <section class="editor-panel" aria-label="记录编辑器">
         <div class="brand-row">
           <div>
             <p class="eyebrow">Quick Record</p>
-            <h1>每日活动记录</h1>
+            <h1>写一条记录</h1>
           </div>
-          <button class="icon-button" id="refreshButton" type="button" title="刷新记录">↻</button>
         </div>
 
         <form id="entryForm" class="entry-form">
           <input type="hidden" id="entryId" />
 
-          <label>
-            <span>时间</span>
-            <input id="occurredAt" name="occurredAt" type="datetime-local" required />
-          </label>
+          <div class="title-grid">
+            <label>
+              <span>标题</span>
+              <input id="title" name="title" type="text" placeholder="比如：二分查找复盘 / 背腿训练" required />
+            </label>
+          </div>
 
-          <div class="form-grid">
+          <div class="form-grid meta-grid">
+            <label>
+              <span>时间</span>
+              <input id="occurredAt" name="occurredAt" type="datetime-local" required />
+            </label>
             <label>
               <span>类型</span>
               <select id="activityType" name="activityType" required>
@@ -36,17 +155,38 @@
                 <option value="other">其他</option>
               </select>
             </label>
-
             <label>
-              <span>标题</span>
-              <input id="title" name="title" type="text" placeholder="比如：二分查找复盘 / 背腿训练" required />
+              <span>标签</span>
+              <input id="tagsInput" name="tags" type="text" placeholder="动态规划, 背部训练, 复盘" />
             </label>
           </div>
 
-          <label>
-            <span>正文</span>
-            <textarea id="content" name="content" rows="7" placeholder="写下今天的思路、动作、重量、感受或下一步计划"></textarea>
-          </label>
+          <section class="markdown-editor" aria-label="Markdown 编辑器">
+            <div class="editor-toolbar">
+              <span>Markdown</span>
+              <div class="toolbar-actions">
+                <button type="button" data-md="bold" title="加粗">B</button>
+                <button type="button" data-md="italic" title="斜体">I</button>
+                <button type="button" data-md="heading" title="二级标题">H2</button>
+                <button type="button" data-md="list" title="列表">•</button>
+                <button type="button" data-md="quote" title="引用">”</button>
+                <button type="button" data-md="code" title="代码块">&lt;/&gt;</button>
+                <button type="button" data-md="link" title="链接">Link</button>
+              </div>
+            </div>
+
+            <div class="markdown-workspace">
+              <label class="editor-field">
+                <span>正文</span>
+                <textarea id="content" name="content" rows="18" placeholder="## 今天的记录&#10;&#10;- 刷题思路&#10;- 健身动作和重量&#10;- 明天要继续的点"></textarea>
+              </label>
+
+              <section class="preview-panel" aria-label="Markdown 预览">
+                <div class="preview-title">预览</div>
+                <div id="markdownPreview" class="markdown-body empty-preview">开始输入后会在这里预览</div>
+              </section>
+            </div>
+          </section>
 
           <div class="metrics-grid">
             <label>
@@ -74,51 +214,6 @@
           </div>
         </form>
       </section>
-
-      <section class="timeline-panel" aria-label="时间线">
-        <div class="filters">
-          <label>
-            <span>搜索</span>
-            <input id="searchInput" type="search" placeholder="标题或正文" />
-          </label>
-          <label>
-            <span>筛选</span>
-            <select id="filterType">
-              <option value="all">全部类型</option>
-              <option value="coding">刷题心得</option>
-              <option value="fitness">健身记录</option>
-              <option value="reading">阅读学习</option>
-              <option value="life">生活</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
-          <label>
-            <span>开始</span>
-            <input id="startDate" type="date" />
-          </label>
-          <label>
-            <span>结束</span>
-            <input id="endDate" type="date" />
-          </label>
-        </div>
-
-        <div class="summary-strip">
-          <div>
-            <span id="totalCount">0</span>
-            <small>条记录</small>
-          </div>
-          <div>
-            <span id="codingCount">0</span>
-            <small>刷题</small>
-          </div>
-          <div>
-            <span id="fitnessCount">0</span>
-            <small>健身</small>
-          </div>
-        </div>
-
-        <div id="timeline" class="timeline"></div>
-      </section>
     </main>
 
     <template id="entryTemplate">
@@ -130,10 +225,12 @@
           </div>
           <span class="type-pill"></span>
         </div>
-        <p class="entry-content"></p>
+        <div class="entry-content markdown-body"></div>
         <div class="metric-row"></div>
+        <div class="tag-row"></div>
         <div class="image-grid"></div>
         <div class="card-actions">
+          <button type="button" data-action="view">查看</button>
           <button type="button" data-action="edit">编辑</button>
           <button type="button" data-action="delete">删除</button>
         </div>

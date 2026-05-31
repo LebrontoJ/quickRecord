@@ -64,6 +64,33 @@ function parseMetrics(value) {
   }
 }
 
+function parseTags(value) {
+  let rawTags = Array.isArray(value) ? value : null;
+
+  if (!rawTags) {
+    try {
+      const parsed = JSON.parse(String(value || '[]'));
+      rawTags = Array.isArray(parsed) ? parsed : null;
+    } catch {
+      rawTags = null;
+    }
+  }
+
+  rawTags ||= String(value || '').split(',');
+  const seen = new Set();
+
+  return rawTags
+    .map((tag) => String(tag).trim().replace(/^#/, ''))
+    .filter(Boolean)
+    .filter((tag) => {
+      const key = tag.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
 function normalizeEntry(row) {
   return {
     id: row.id,
@@ -72,35 +99,73 @@ function normalizeEntry(row) {
     title: row.title,
     content: row.content,
     metrics: row.metrics || {},
+    tags: row.tags || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     images: row.images || []
   };
 }
 
+function entrySelectSql(whereSql = '') {
+  return `
+    SELECT
+      e.*,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object(
+          'id', i.id,
+          'originalName', i.original_name,
+          'mimeType', i.mime_type,
+          'fileSize', i.file_size,
+          'url', i.url,
+          'createdAt', i.created_at
+        )) FILTER (WHERE i.id IS NOT NULL),
+        '[]'::json
+      ) AS images,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object(
+          'id', t.id,
+          'name', t.name
+        )) FILTER (WHERE t.id IS NOT NULL),
+        '[]'::json
+      ) AS tags
+    FROM entries e
+    LEFT JOIN entry_images i ON i.entry_id = e.id
+    LEFT JOIN entry_tags et ON et.entry_id = e.id
+    LEFT JOIN tags t ON t.id = et.tag_id
+    ${whereSql}
+    GROUP BY e.id
+  `;
+}
+
+async function syncTags(client, entryId, tags) {
+  await client.query('DELETE FROM entry_tags WHERE entry_id = $1', [entryId]);
+
+  for (const tag of tags) {
+    const result = await client.query(
+      `
+        INSERT INTO tags (name)
+        VALUES ($1)
+        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+      `,
+      [tag]
+    );
+
+    await client.query(
+      `
+        INSERT INTO entry_tags (entry_id, tag_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+      `,
+      [entryId, result.rows[0].id]
+    );
+  }
+}
+
 async function fetchEntry(client, id) {
   const result = await client.query(
     `
-      SELECT
-        e.*,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', i.id,
-              'originalName', i.original_name,
-              'mimeType', i.mime_type,
-              'fileSize', i.file_size,
-              'url', i.url,
-              'createdAt', i.created_at
-            )
-            ORDER BY i.created_at
-          ) FILTER (WHERE i.id IS NOT NULL),
-          '[]'::json
-        ) AS images
-      FROM entries e
-      LEFT JOIN entry_images i ON i.entry_id = e.id
-      WHERE e.id = $1
-      GROUP BY e.id
+      ${entrySelectSql('WHERE e.id = $1')}
     `,
     [id]
   );
@@ -123,7 +188,7 @@ app.get('/api/health', async (_req, res) => {
 
 app.get('/api/entries', async (req, res, next) => {
   try {
-    const { activityType, start, end, q } = req.query;
+    const { activityType, start, end, q, tag } = req.query;
     const where = [];
     const params = [];
 
@@ -147,28 +212,21 @@ app.get('/api/entries', async (req, res, next) => {
       where.push(`(e.title ILIKE $${params.length} OR e.content ILIKE $${params.length})`);
     }
 
+    if (tag && tag !== 'all') {
+      params.push(tag);
+      where.push(`
+        EXISTS (
+          SELECT 1
+          FROM entry_tags filter_et
+          JOIN tags filter_t ON filter_t.id = filter_et.tag_id
+          WHERE filter_et.entry_id = e.id AND filter_t.name = $${params.length}
+        )
+      `);
+    }
+
     const result = await pool.query(
       `
-        SELECT
-          e.*,
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'id', i.id,
-                'originalName', i.original_name,
-                'mimeType', i.mime_type,
-                'fileSize', i.file_size,
-                'url', i.url,
-                'createdAt', i.created_at
-              )
-              ORDER BY i.created_at
-            ) FILTER (WHERE i.id IS NOT NULL),
-            '[]'::json
-          ) AS images
-        FROM entries e
-        LEFT JOIN entry_images i ON i.entry_id = e.id
-        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-        GROUP BY e.id
+        ${entrySelectSql(where.length ? `WHERE ${where.join(' AND ')}` : '')}
         ORDER BY e.occurred_at DESC
         LIMIT 300
       `,
@@ -176,6 +234,116 @@ app.get('/api/entries', async (req, res, next) => {
     );
 
     res.json({ entries: result.rows.map(normalizeEntry) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/tags', async (_req, res, next) => {
+  try {
+    const result = await pool.query(
+      `
+        SELECT t.id, t.name, COUNT(et.entry_id)::int AS count
+        FROM tags t
+        LEFT JOIN entry_tags et ON et.tag_id = t.id
+        GROUP BY t.id
+        ORDER BY count DESC, t.name ASC
+      `
+    );
+
+    res.json({ tags: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/stats', async (_req, res, next) => {
+  try {
+    const [overview, byType, recent, tagResult] = await Promise.all([
+      pool.query(
+        `
+          SELECT
+            COUNT(*)::int AS total_entries,
+            COUNT(DISTINCT occurred_at::date)::int AS active_days,
+            COALESCE(SUM((metrics->>'problemCount')::numeric), 0)::int AS total_problems,
+            COALESCE(SUM((metrics->>'workoutMinutes')::numeric), 0)::int AS total_workout_minutes,
+            COALESCE(ROUND(AVG(NULLIF((metrics->>'bodyWeight')::numeric, 0)), 1), 0) AS average_body_weight
+          FROM entries
+          WHERE occurred_at >= now() - interval '30 days'
+        `
+      ),
+      pool.query(
+        `
+          SELECT activity_type, COUNT(*)::int AS count
+          FROM entries
+          WHERE occurred_at >= now() - interval '30 days'
+          GROUP BY activity_type
+          ORDER BY count DESC
+        `
+      ),
+      pool.query(
+        `
+          SELECT
+            occurred_at::date AS day,
+            COUNT(*)::int AS entry_count,
+            COALESCE(SUM((metrics->>'problemCount')::numeric), 0)::int AS problem_count,
+            COALESCE(SUM((metrics->>'workoutMinutes')::numeric), 0)::int AS workout_minutes
+          FROM entries
+          WHERE occurred_at >= now() - interval '14 days'
+          GROUP BY day
+          ORDER BY day ASC
+        `
+      ),
+      pool.query(
+        `
+          SELECT t.name, COUNT(et.entry_id)::int AS count
+          FROM tags t
+          JOIN entry_tags et ON et.tag_id = t.id
+          JOIN entries e ON e.id = et.entry_id
+          WHERE e.occurred_at >= now() - interval '30 days'
+          GROUP BY t.name
+          ORDER BY count DESC, t.name ASC
+          LIMIT 8
+        `
+      )
+    ]);
+
+    res.json({
+      overview: overview.rows[0],
+      byType: byType.rows,
+      recent: recent.rows,
+      topTags: tagResult.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/calendar', async (req, res, next) => {
+  try {
+    const month = String(req.query.month || '').match(/^\d{4}-\d{2}$/)
+      ? req.query.month
+      : new Date().toISOString().slice(0, 7);
+
+    const result = await pool.query(
+      `
+        SELECT
+          occurred_at::date AS day,
+          COUNT(*)::int AS entry_count,
+          COUNT(*) FILTER (WHERE activity_type = 'coding')::int AS coding_count,
+          COUNT(*) FILTER (WHERE activity_type = 'fitness')::int AS fitness_count,
+          COALESCE(SUM((metrics->>'problemCount')::numeric), 0)::int AS problem_count,
+          COALESCE(SUM((metrics->>'workoutMinutes')::numeric), 0)::int AS workout_minutes
+        FROM entries
+        WHERE occurred_at >= $1::date
+          AND occurred_at < ($1::date + interval '1 month')
+        GROUP BY day
+        ORDER BY day ASC
+      `,
+      [`${month}-01`]
+    );
+
+    res.json({ month, days: result.rows });
   } catch (error) {
     next(error);
   }
@@ -195,8 +363,9 @@ app.get('/api/entries/:id', async (req, res, next) => {
 });
 
 app.post('/api/entries', upload.array('images'), async (req, res, next) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const { occurredAt, activityType, title, content } = req.body;
     if (!occurredAt || !activityType || !title) {
       res.status(400).json({ error: 'occurredAt, activityType, and title are required.' });
@@ -214,6 +383,8 @@ app.post('/api/entries', upload.array('images'), async (req, res, next) => {
     );
 
     const entryId = created.rows[0].id;
+    await syncTags(client, entryId, parseTags(req.body.tags));
+
     for (const file of req.files || []) {
       await client.query(
         `
@@ -228,20 +399,24 @@ app.post('/api/entries', upload.array('images'), async (req, res, next) => {
     await client.query('COMMIT');
     res.status(201).json({ entry });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) await client.query('ROLLBACK').catch(() => {});
     for (const file of req.files || []) {
       fs.rm(file.path, { force: true }, () => {});
     }
     next(error);
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 app.put('/api/entries/:id', async (req, res, next) => {
+  let client;
   try {
-    const { occurredAt, activityType, title, content, metrics } = req.body;
-    const result = await pool.query(
+    client = await pool.connect();
+    const { occurredAt, activityType, title, content, metrics, tags } = req.body;
+
+    await client.query('BEGIN');
+    const result = await client.query(
       `
         UPDATE entries
         SET occurred_at = $1,
@@ -256,14 +431,20 @@ app.put('/api/entries/:id', async (req, res, next) => {
     );
 
     if (!result.rowCount) {
+      await client.query('ROLLBACK');
       res.status(404).json({ error: 'Entry not found.' });
       return;
     }
 
-    const entry = await fetchEntry(pool, req.params.id);
+    await syncTags(client, req.params.id, parseTags(tags));
+    const entry = await fetchEntry(client, req.params.id);
+    await client.query('COMMIT');
     res.json({ entry });
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     next(error);
+  } finally {
+    if (client) client.release();
   }
 });
 
@@ -290,6 +471,20 @@ app.delete('/api/entries/:id', async (req, res, next) => {
 
 app.use((error, _req, res, _next) => {
   console.error(error);
+  if (error.code === 'ECONNREFUSED') {
+    res.status(503).json({
+      error: 'Database is not reachable. Please start PostgreSQL and run migrations.'
+    });
+    return;
+  }
+
+  if (error.code === '42P01') {
+    res.status(500).json({
+      error: 'Database schema is missing a table. Please run npm run db:migrate.'
+    });
+    return;
+  }
+
   res.status(500).json({ error: error.message || 'Unexpected server error.' });
 });
 
