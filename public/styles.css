@@ -219,11 +219,21 @@ textarea:focus {
 }
 
 .form-grid {
-  grid-template-columns: 180px 140px 1fr;
+  grid-template-columns: minmax(280px, 1.1fr) 150px minmax(220px, 1fr);
 }
 
 .meta-grid {
   align-items: end;
+  overflow: visible;
+}
+
+.meta-grid label {
+  position: relative;
+  min-width: 0;
+}
+
+.meta-grid label:focus-within {
+  z-index: 12;
 }
 
 .metrics-grid {
