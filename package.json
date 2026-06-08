@@ -7,13 +7,16 @@
     "dev": "node server.js",
     "start": "node server.js",
     "db:migrate": "node scripts/migrate.js",
-    "check": "node --check server.js && node --check scripts/migrate.js && node --check public/app.js && node --check public/record.js",
+    "check": "node --check server.js && node --check scripts/migrate.js && node --check public/app.js && node --check public/record.js && node --check public/compare.js && node --check public/lib/diff.js",
     "test": "node --test"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "mammoth": "^1.12.0",
     "multer": "^2.1.1",
-    "pg": "^8.13.1"
+    "pdf-parse": "1.1.1",
+    "pg": "^8.13.1",
+    "word-extractor": "^1.0.4"
   }
 }

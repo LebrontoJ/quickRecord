@@ -7,6 +7,7 @@
 - 新增、编辑、删除每日记录
 - 放大的 Markdown 编辑器，支持实时预览和常用格式插入
 - 右侧记录栏可折叠，写长复盘时可以留出更多空间
+- 独立文本对比工具，支持粘贴文本或上传 Markdown、DOC、DOCX、PDF，红绿标注增删内容
 - 按时间、类型、关键词回溯记录
 - 日历视图，按月查看每天记录数量并快速跳转到某一天
 - 标签系统，支持用多个标签组织刷题、健身和复盘内容
@@ -81,6 +82,7 @@ DATABASE_URL=postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 - `PUT /api/entries/:id`：更新记录
 - `DELETE /api/entries/:id`：删除记录和关联图片
 - `GET /api/health`：数据库健康检查
+- `POST /api/extract-text`：从 Markdown、TXT、DOC、DOCX、PDF 文件中提取文本
 
 ## 下一步可扩展
 

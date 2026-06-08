@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文本对比 - Quick Record</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="compare-body">
+    <main class="compare-page">
+      <header class="compare-header">
+        <div>
+          <p class="eyebrow">Quick Record / Compare</p>
+          <h1>文本版本对比</h1>
+        </div>
+        <a class="secondary-button nav-link" href="/">返回记录</a>
+      </header>
+
+      <section class="compare-inputs" aria-label="待对比文本">
+        <article class="compare-input-panel">
+          <div class="compare-panel-header">
+            <div>
+              <span class="compare-label old">旧版本</span>
+              <strong id="leftFilename">直接粘贴或上传文件</strong>
+            </div>
+            <div class="compare-file-actions">
+              <button class="icon-button compare-copy-button" id="copyLeftText" type="button" title="复制旧版本文本">Copy</button>
+              <label class="upload-button">
+              <span class="upload-icon">↑</span>
+              <span>选择文件</span>
+              <input id="leftFile" type="file" accept=".txt,.md,.markdown,.doc,.docx,.pdf" />
+              </label>
+            </div>
+          </div>
+          <textarea id="leftText" spellcheck="false" placeholder="在这里粘贴旧版本文字"></textarea>
+        </article>
+
+        <article class="compare-input-panel">
+          <div class="compare-panel-header">
+            <div>
+              <span class="compare-label new">新版本</span>
+              <strong id="rightFilename">直接粘贴或上传文件</strong>
+            </div>
+            <div class="compare-file-actions">
+              <button class="icon-button compare-copy-button" id="copyRightText" type="button" title="复制新版本文本">Copy</button>
+              <label class="upload-button">
+              <span class="upload-icon">↑</span>
+              <span>选择文件</span>
+              <input id="rightFile" type="file" accept=".txt,.md,.markdown,.doc,.docx,.pdf" />
+              </label>
+            </div>
+          </div>
+          <textarea id="rightText" spellcheck="false" placeholder="在这里粘贴新版本文字"></textarea>
+        </article>
+      </section>
+
+      <div class="compare-actions">
+        <button class="secondary-button" id="clearCompare" type="button">清空</button>
+        <button class="secondary-button" id="swapCompare" type="button">交换两侧</button>
+        <button class="primary-button" id="runCompare" type="button">开始对比</button>
+      </div>
+
+      <section class="diff-section" aria-label="文本差异">
+        <div class="diff-summary" id="diffSummary">
+          <span>等待对比</span>
+        </div>
+        <div class="diff-head">
+          <span>旧版本</span>
+          <span>新版本</span>
+        </div>
+        <div class="diff-view" id="diffView">
+          <div class="empty-state">粘贴或上传两份文本，然后点击“开始对比”</div>
+        </div>
+      </section>
+    </main>
+    <script src="/compare.js" type="module"></script>
+  </body>
+</html>

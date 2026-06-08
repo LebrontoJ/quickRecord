@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import mammoth from 'mammoth';
 import multer from 'multer';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import pg from 'pg';
+import WordExtractor from 'word-extractor';
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -46,6 +49,14 @@ const upload = multer({
       return;
     }
     callback(null, true);
+  }
+});
+
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 15 * 1024 * 1024,
+    files: 1
   }
 });
 
@@ -183,6 +194,43 @@ app.get('/api/health', async (_req, res) => {
       error: 'Database is not reachable.',
       detail: error.code || error.message
     });
+  }
+});
+
+app.post('/api/extract-text', documentUpload.single('document'), async (req, res, next) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: 'Please upload a document.' });
+      return;
+    }
+
+    const extension = path.extname(file.originalname).toLowerCase();
+    let text = '';
+
+    if (['.txt', '.md', '.markdown'].includes(extension)) {
+      text = file.buffer.toString('utf8');
+    } else if (extension === '.docx') {
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      text = result.value;
+    } else if (extension === '.doc') {
+      const extractor = new WordExtractor();
+      const result = await extractor.extract(file.buffer);
+      text = result.getBody();
+    } else if (extension === '.pdf') {
+      const result = await pdfParse(file.buffer);
+      text = result.text;
+    } else {
+      res.status(415).json({ error: 'Supported formats: .txt, .md, .doc, .docx, and .pdf.' });
+      return;
+    }
+
+    res.json({
+      filename: file.originalname,
+      text: text.replace(/\r\n/g, '\n').trim()
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
